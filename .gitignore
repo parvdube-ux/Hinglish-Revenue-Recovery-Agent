@@ -1,0 +1,53 @@
+# Environment Variables (CRITICAL: Never leak your API Keys!)
+.env
+.env*.local
+
+# Python Cache and Compilation Files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Unit Test / Coverage Cache
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+pylintrc
+.pytest_cache/
+
+# Local/Simulated Reports and CSV Output (Optional, but keeps git clean)
+recovery_audit_log.csv
+
+# IDE / Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
