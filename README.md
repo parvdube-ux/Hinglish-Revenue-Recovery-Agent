@@ -1,6 +1,8 @@
 # Razorpay AI Buildathon — Track 3 (AI Revenue Recovery)
 ## Hinglish Checkout Recovery Agent
 
+Built by Parv Dube for the Razorpay AI Buildathon 2026 — Track 3.
+
 This repository contains the codebase for the **Hinglish Checkout Recovery Agent**, built explicitly for Track 3 (AI Revenue Recovery) of the Razorpay AI Buildathon.
 
 The agent automates the detection, diagnosis, and recovery of failed/abandoned payments for online merchants, using natural Hinglish SMS/WhatsApp nudges, bounded negotiation (discounts), and real Razorpay payment integration, while adhering to strict, un-bypassable anti-spam compliance rules.
@@ -23,17 +25,21 @@ Here is how the project addresses each core evaluation criterion from the builda
 
 ## 📁 Repository Structure
 
-* [**`config.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/config.py) — Environment variables, API credential loaders, and configurable anti-spam thresholds.
-* [**`razorpay_client.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/razorpay_client.py) — Wrapper for `razorpay` python SDK with simulated mode fallback and connection error generation.
-* [**`database.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/database.py) — Pydantic schemas and thread-safe in-memory store for orders, campaigns, messages, and audit trails.
-* [**`agent.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/agent.py) — The core brain. Contains the classification diagnosis (keyword/Gemini), copy generator, and stopping rule state machine.
-* [**`simulator.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/simulator.py) — Batch runner driving 55 customer journeys with diverse personas (Cooperative, Delayed, Hostile, Unresponsive, Paid Elsewhere, System Failure).
-* [**`main.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/main.py) — Interactive CLI offering Batch Simulation reports, Campaign Audit Trail inspector, and Interactive Chat mode.
-* [**`test_recovery_agent.py`**](file:///C:/Users/DELL/.gemini/antigravity/scratch/razorpay_buildathon/test_recovery_agent.py) — Unit tests verifying the stopping rules and agent fallbacks.
+* **`config.py`** — Environment variables, API credential loaders, and configurable anti-spam thresholds.
+* **`razorpay_client.py`** — Wrapper for `razorpay` python SDK with simulated mode fallback and connection error generation.
+* **`database.py`** — Pydantic schemas and thread-safe in-memory store for orders, campaigns, messages, and audit trails.
+* **`agent.py`** — The core brain. Contains the classification diagnosis (keyword/Gemini), copy generator, and stopping rule state machine.
+* **`simulator.py`** — Batch runner driving 55 customer journeys with diverse personas (Cooperative, Delayed, Hostile, Unresponsive, Paid Elsewhere, System Failure).
+* **`main.py`** — Interactive CLI offering Batch Simulation reports, Campaign Audit Trail inspector, and Interactive Chat mode.
+* **`test_recovery_agent.py`** — Unit tests verifying the stopping rules and agent fallbacks.
 
 ---
 
 ## 🚀 How to Run the Project
+
+### Prerequisites
+* **Python version:** Python 3.10+ is required.
+* **Virtual Environment:** We highly recommend creating and activating a virtual environment (e.g., `python -m venv venv` and activating it) before installing dependencies.
 
 ### 1. Installation
 Clone the repository and install the dependencies:
@@ -50,13 +56,14 @@ RAZORPAY_KEY_SECRET=your_key_secret
 
 # For LLM-based error classification and Hinglish generation
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.6-flash
 
 # Configurable Thresholds (defaults)
 MAX_OUTBOUND_MESSAGES=3
 MAX_RETRIES=3
 RECOVERY_TIMEOUT_HOURS=24
 ```
-*Note: If no `.env` file is present, the codebase automatically runs in **Mock mode** (safe, deterministic fallback with zero setups required).*
+*Note: If no `.env` file is present, the codebase automatically runs in **Mock mode** (safe, sandbox fallback with zero setups required).*
 
 ### 3. Run the CLI
 Start the main application console:
@@ -73,6 +80,15 @@ Execute the test suite to verify that the stopping rules and API timeout fallbac
 ```bash
 python -m unittest test_recovery_agent.py
 ```
+
+---
+
+## ⚠️ Limitations & Next Steps
+
+* **Synthetic Personas:** The timeline simulator relies on predefined customer personas and reply patterns rather than live customer behavior data. In production, response likelihood will vary dynamically.
+* **A/B Testing:** Timing intervals (4h/8h/12h nudges) and discount thresholds (5% dynamic discount) are currently hardcoded configurations rather than A/B tested optimizations.
+* **Language Scope:** Currently optimized for Hinglish-only messaging. Next steps include expanding support to regional Indian languages (Tamil, Telugu, Marathi, etc.) based on customer location data.
+* **LLM Fallback Handlers:** The agent relies on Gemini API for diagnosis. During test suite executions, rate-limits or deprecations (e.g. stale model configuration) are automatically caught, and the agent successfully and gracefully falls back to rule-based keyword templates to avoid silent failure.
 
 ---
 
