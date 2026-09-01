@@ -38,7 +38,7 @@ class TestRecoveryAgentRules(unittest.TestCase):
     def test_stop_on_completed_payment(self):
         """Proves that a campaign halts immediately when order status changes to paid."""
         # First check that step 1 sends a nudge
-        msg1 = agent.process_recovery_step(self.campaign_id, time.time())
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), is_batch_sim=True)
         self.assertIsNotNone(msg1)
         self.assertEqual(self.campaign.outbound_count, 1)
         self.assertEqual(self.campaign.status, "active")
@@ -47,7 +47,7 @@ class TestRecoveryAgentRules(unittest.TestCase):
         self.order.status = "paid"
         
         # Tick the agent again
-        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 3600)
+        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 3600, is_batch_sim=True)
         
         # Verify no message was sent and status transitions to completed_paid
         self.assertIsNone(msg2)
@@ -60,9 +60,9 @@ class TestRecoveryAgentRules(unittest.TestCase):
         self.assertEqual(config.MAX_OUTBOUND_MESSAGES, 3)
         
         # Run 3 attempts
-        msg1 = agent.process_recovery_step(self.campaign_id, time.time())
-        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 14400) # 4 hours later
-        msg3 = agent.process_recovery_step(self.campaign_id, time.time() + 28800) # 8 hours later
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), is_batch_sim=True)
+        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 14400, is_batch_sim=True) # 4 hours later
+        msg3 = agent.process_recovery_step(self.campaign_id, time.time() + 28800, is_batch_sim=True) # 8 hours later
         
         self.assertIsNotNone(msg1)
         self.assertIsNotNone(msg2)
@@ -71,7 +71,7 @@ class TestRecoveryAgentRules(unittest.TestCase):
         self.assertEqual(self.campaign.status, "active")
         
         # 4th run should halt and trigger max attempts stop condition
-        msg4 = agent.process_recovery_step(self.campaign_id, time.time() + 43200) # 12 hours later
+        msg4 = agent.process_recovery_step(self.campaign_id, time.time() + 43200, is_batch_sim=True) # 12 hours later
         self.assertIsNone(msg4)
         self.assertEqual(self.campaign.status, "stopped_max_attempts")
         self.assertEqual(self.campaign.outbound_count, 3)  # Did not increment
@@ -79,7 +79,7 @@ class TestRecoveryAgentRules(unittest.TestCase):
     def test_stop_on_explicit_opt_out(self):
         """Proves that the campaign halts immediately if the customer replies with negative intent."""
         # Step 1 sent
-        msg1 = agent.process_recovery_step(self.campaign_id, time.time())
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), is_batch_sim=True)
         self.assertIsNotNone(msg1)
         
         # Simulate customer opt-out reply
@@ -91,7 +91,7 @@ class TestRecoveryAgentRules(unittest.TestCase):
         ))
         
         # Tick the agent
-        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 3600)
+        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 3600, is_batch_sim=True)
         
         # Verify it stops
         self.assertIsNone(msg2)
@@ -106,21 +106,21 @@ class TestRecoveryAgentRules(unittest.TestCase):
     def test_stop_on_expiry(self):
         """Proves that the campaign halts when the simulated time exceeds the recovery window."""
         # Tick at t = 0 (Success)
-        msg1 = agent.process_recovery_step(self.campaign_id, time.time())
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), is_batch_sim=True)
         self.assertIsNotNone(msg1)
         
         # Expiry window is RECOVERY_TIMEOUT_HOURS (default: 24h)
         past_expiry_time = time.time() + (config.RECOVERY_TIMEOUT_HOURS + 1) * 3600
         
         # Tick the agent
-        msg2 = agent.process_recovery_step(self.campaign_id, past_expiry_time)
+        msg2 = agent.process_recovery_step(self.campaign_id, past_expiry_time, is_batch_sim=True)
         self.assertIsNone(msg2)
         self.assertEqual(self.campaign.status, "stopped_expired")
 
     def test_graceful_agent_failure_fallback(self):
         """Proves that a Razorpay API error/timeout is caught and falls back to a merchant URL."""
         # Run step 1 but trigger api timeout
-        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), simulate_api_timeout=True)
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), simulate_api_timeout=True, is_batch_sim=True)
         
         # Verification:
         # 1. Message should still be successfully generated
@@ -133,11 +133,31 @@ class TestRecoveryAgentRules(unittest.TestCase):
         # 4. Outbound count should still increment
         self.assertEqual(self.campaign.outbound_count, 1)
         
-        # 5. Check audit trail details for fallback reasoning (Hard Requirement 4)
+        # 5. Check audit trail details for fallback reasoning and action_taken preservation
         audit_trail = db.get_audit_trail(self.campaign_id)
         api_fail_audit = audit_trail[0]
         self.assertIn("failed", api_fail_audit.reasoning)
         self.assertIn("fallback", api_fail_audit.decision)
+        self.assertIn("fallback", api_fail_audit.action_taken.lower())
+
+    def test_escalation_discount_application(self):
+        """Proves that a 5% discount is applied on attempt #2 and reflected in message amount and payment link."""
+        # 1st nudge (Full price: ₹1000.00)
+        msg1 = agent.process_recovery_step(self.campaign_id, time.time(), is_batch_sim=True)
+        self.assertIsNotNone(msg1)
+        self.assertEqual(self.campaign.discount_applied_percent, 0)
+        self.assertIn("1000.00", msg1)
+        link1 = self.campaign.payment_link_url
+        
+        # 2nd nudge (Escalation with 5% discount: ₹950.00) - 4 hours later
+        msg2 = agent.process_recovery_step(self.campaign_id, time.time() + 14400, is_batch_sim=True)
+        self.assertIsNotNone(msg2)
+        self.assertEqual(self.campaign.discount_applied_percent, 5)
+        self.assertIn("950.00", msg2)
+        link2 = self.campaign.payment_link_url
+        
+        # Verify a new payment link was generated for attempt #2
+        self.assertNotEqual(link1, link2)
 
     def test_external_paid_exclusion_from_agent_recovery(self):
         """Proves that a payment with outbound_count == 0 is excluded from agent-attributed recovery."""

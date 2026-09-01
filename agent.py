@@ -31,7 +31,7 @@ if config.is_gemini_configured():
     except Exception as e:
         logger.error(f"Failed to import/initialize google-genai: {e}. Falling back to Rule-based Reasoning Engine.")
 
-def classify_failure_reason(bank_error_message: str) -> Tuple[str, str]:
+def classify_failure_reason(bank_error_message: str, force_rule_engine: bool = False) -> Tuple[str, str]:
     """
     Diagnoses the root cause of a payment failure based on raw bank messages.
     Returns: (failure_category, reasoning)
@@ -41,7 +41,7 @@ def classify_failure_reason(bank_error_message: str) -> Tuple[str, str]:
     bank_error_lower = bank_error_message.lower()
     
     # Try Gemini classification if enabled
-    if gemini_client:
+    if not force_rule_engine and gemini_client:
         try:
             prompt = (
                 "You are an expert payment risk analyst at Razorpay. "
@@ -74,7 +74,11 @@ def classify_failure_reason(bank_error_message: str) -> Tuple[str, str]:
             reasoning = data.get("reasoning", "Classified using Gemini LLM.")
             return category, reasoning
         except Exception as e:
-            logger.error(f"Gemini API failure during diagnosis: {e}. Falling back to Rule-based Reasoning Engine.")
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                logger.info("Gemini API Free-Tier quota rate limit reached. Seamlessly utilizing Rule-Based Reasoning Engine.")
+            else:
+                logger.warning(f"Gemini API unavailable: {e}. Falling back to Rule-based Reasoning Engine.")
 
     # Rule-Based Reasoning Engine (Fallback)
     # This simulates actual reasoning by extracting context, analyzing patterns, and building custom reasoning strings
@@ -120,12 +124,13 @@ def generate_hinglish_message(
     product_name: str,
     amount: float,
     category: str,
-    payment_link: str
+    payment_link: str,
+    force_template: bool = False
 ) -> str:
     """
     Generates a personalized checkout recovery message in Hinglish.
     """
-    if gemini_client:
+    if not force_template and gemini_client:
         try:
             prompt = (
                 f"Write a friendly checkout recovery SMS in Hinglish for a customer named '{customer_name}'.\n"
@@ -144,7 +149,11 @@ def generate_hinglish_message(
             )
             return response.text.strip()
         except Exception as e:
-            logger.error(f"Gemini generation failed: {e}. Using templates.")
+            err_msg = str(e)
+            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                logger.info("Gemini API Free-Tier quota rate limit reached. Seamlessly utilizing Hinglish copywriter templates.")
+            else:
+                logger.warning(f"Gemini generation unavailable: {e}. Using templates.")
 
     # High-quality templated Hinglish messages with slots
     templates = {
@@ -184,7 +193,7 @@ def has_negative_intent(customer_reply: str) -> bool:
     ]
     return any(word in reply_lower for word in opt_out_words)
 
-def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_timeout: bool = False) -> Optional[str]:
+def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_timeout: bool = False, is_batch_sim: bool = False) -> Optional[str]:
     """
     Processes a single recovery tick for a campaign.
     Evaluates stopping rules, executes actions, and writes exhaustive logs.
@@ -315,42 +324,46 @@ def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_
 
     # --- Proceed to Action / Nudge Execution ---
     
-    # Check if we need to create/regenerate the Razorpay Payment Link
-    if not campaign.payment_link_url:
-        observation = f"Triggered recovery step. Link needed for order {order.order_id}."
+    # Determine if link creation or regeneration (due to escalation discount) is needed
+    needs_new_link = False
+    if campaign.outbound_count == 1:
+        # Escalation nudge (attempt #2): apply 5% discount and force generating a new discounted link
+        campaign.discount_applied_percent = 5
+        needs_new_link = True
+        logger.info(f"Escalation nudge: applying 5% discount for order {order.order_id}")
+    elif not campaign.payment_link_url:
+        # Initial nudge (attempt #1): create full-price link
+        needs_new_link = True
+
+    if needs_new_link:
+        observation = f"Triggered recovery step. Link needed/regenerated for order {order.order_id}."
         
         # Hard Requirement 4: Handle agent-side failure gracefully
         try:
-            amount_paise = int(order.amount_in_rupees * 100)
-            
-            # Apply dynamic discount if it's the second attempt (escalation nudge)
-            discount_percent = 0
-            if campaign.outbound_count == 1:
-                # Offer a 5% recovery incentive discount
-                discount_percent = 5
-                amount_paise = int(order.amount_in_rupees * 0.95 * 100)
-                campaign.discount_applied_percent = discount_percent
-                logger.info(f"Escalation nudge: applying {discount_percent}% discount for order {order.order_id}")
+            discount_factor = 1.0 - (campaign.discount_applied_percent / 100.0)
+            amount_paise = int(round(order.amount_in_rupees * discount_factor * 100))
             
             expiry_timestamp = int(simulated_time + (config.RECOVERY_TIMEOUT_HOURS * 3600))
             
-            # Create Razorpay payment link
+            # Create Razorpay payment link (add unique timestamp suffix to avoid duplicate reference_id errors on retries)
+            unique_ref_id = f"{order.order_id}_{int(simulated_time)}_{int(time.time())}"
             link_data = rzp_client.create_payment_link(
                 amount_paise=amount_paise,
-                description=f"Recovery Link for Order {order.order_id}",
+                description=f"Recovery Link for Order {order.order_id} (Attempt #{campaign.outbound_count + 1})",
                 customer_name=order.customer_name,
                 customer_email=order.customer_email,
                 customer_phone=order.customer_phone,
                 expiry_timestamp=expiry_timestamp,
-                reference_id=order.order_id,
-                force_timeout=simulate_api_timeout
+                reference_id=unique_ref_id,
+                force_timeout=simulate_api_timeout,
+                force_mock=is_batch_sim
             )
             campaign.payment_link_id = link_data["id"]
             campaign.payment_link_url = link_data["short_url"]
             
-            diagnosis = f"Successfully generated Razorpay payment link (ID: {link_data['id']})."
+            diagnosis = f"Successfully generated Razorpay payment link (ID: {link_data['id']}, Amount: ₹{amount_paise/100:.2f})."
             decision = f"Proceed with nudge sequence (Attempt #{campaign.outbound_count + 1})."
-            reasoning = "Payment link is active, allowing recovery payload delivery."
+            reasoning = f"Payment link is active with {campaign.discount_applied_percent}% discount, allowing recovery payload delivery."
             
         except Exception as e:
             # Fallback path for agent-side failure
@@ -370,7 +383,7 @@ def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_
     
     # Run classification diagnosis (only log on the first outbound message)
     if campaign.outbound_count == 0:
-        fail_category, diag_reason = classify_failure_reason(order.bank_error_message)
+        fail_category, diag_reason = classify_failure_reason(order.bank_error_message, force_rule_engine=is_batch_sim)
         # Update order category
         order.failure_reason = fail_category
     else:
@@ -378,12 +391,14 @@ def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_
         diag_reason = "Retained original classification diagnosis."
 
     # Generate Hinglish message copy
+    discounted_amount = order.amount_in_rupees * (1.0 - (campaign.discount_applied_percent / 100.0))
     message_text = generate_hinglish_message(
         customer_name=order.customer_name,
         product_name=f"Order #{order.order_id}",
-        amount=order.amount_in_rupees * (1 - (campaign.discount_applied_percent / 100)),
+        amount=discounted_amount,
         category=fail_category,
-        payment_link=campaign.payment_link_url
+        payment_link=campaign.payment_link_url,
+        force_template=is_batch_sim
     )
 
     # Execute Outbound Message (Log message and update status)
@@ -411,6 +426,10 @@ def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_
             f"tailored to the {fail_category} error."
         )
 
+    # Combine actions taken (preserving fallback details if any)
+    sent_action = f"Sent message: '{message_text}'"
+    final_action_taken = f"{action_taken} | {sent_action}" if action_taken else sent_action
+
     db.log_audit(AuditLogEntry(
         timestamp=simulated_time,
         campaign_id=campaign_id,
@@ -419,7 +438,7 @@ def process_recovery_step(campaign_id: str, simulated_time: float, simulate_api_
         diagnosis=f"{diagnosis} | reasoning: {diag_reason}",
         decision=decision,
         reasoning=reasoning,
-        action_taken=f"Sent message: '{message_text}'",
+        action_taken=final_action_taken,
         outcome=f"Campaign updated: outbound_count={campaign.outbound_count}, status='{campaign.status}'."
     ))
 

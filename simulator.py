@@ -141,7 +141,7 @@ def run_simulation() -> Dict[str, Any]:
             
         # Determine if we force api failure for the system_failure persona
         force_timeout = (camp.persona == "system_failure")
-        agent.process_recovery_step(camp_id, sim_time, simulate_api_timeout=force_timeout)
+        agent.process_recovery_step(camp_id, sim_time, simulate_api_timeout=force_timeout, is_batch_sim=True)
 
     # Step 2: Time progresses. Run ticks at Hour 1, Hour 4, Hour 5, Hour 8, Hour 12, Hour 24
     timeline_ticks = [
@@ -220,7 +220,7 @@ def run_simulation() -> Dict[str, Any]:
         # B. Run recovery worker tasks
         for camp_id in db.campaigns.keys():
             # Run the recovery worker agent
-            agent.process_recovery_step(camp_id, tick_time)
+            agent.process_recovery_step(camp_id, tick_time, is_batch_sim=True)
 
     # ----------------------------------------------------
     # Calculate Rupee Metrics (Hard Requirement 2 - Fixed Attribution Bug)

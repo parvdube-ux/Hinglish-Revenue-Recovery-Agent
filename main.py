@@ -9,7 +9,9 @@ import agent
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 # Reduce noise from third-party logs
-logging.getLogger("google").setLevel(logging.WARNING)
+logging.getLogger("google").setLevel(logging.ERROR)
+logging.getLogger("google_genai").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 def print_banner(title: str):
@@ -225,19 +227,20 @@ def run_interactive_mode_cli():
             print("\n[System]: Processing your response...")
             time.sleep(1)
             
-            # Tick agent
-            simulated_now += 3600  # Progress time by 1 hour
+            # Progress simulated time by 4 hours (satisfies the strict 3-hour anti-spam interval between nudges)
+            simulated_now += 4 * 3600
             sent_text = agent.process_recovery_step(campaign_id, simulated_now)
             
             if sent_text:
                 print(f"\n>>> AGENT SMS: {sent_text}")
             else:
                 print(f"\n[System]: No message sent. Campaign status is: {campaign.status.upper()}")
-                # Print why it stopped
-                audit_logs = db.get_audit_trail(campaign_id)
-                if audit_logs:
-                    print(f"  Halt Reason: {audit_logs[-1].reasoning}")
-                break
+                # Print why it stopped if halted
+                if campaign.status != "active":
+                    audit_logs = db.get_audit_trail(campaign_id)
+                    if audit_logs:
+                        print(f"  Halt Reason: {audit_logs[-1].reasoning}")
+                    break
         else:
             print("Invalid option.")
 

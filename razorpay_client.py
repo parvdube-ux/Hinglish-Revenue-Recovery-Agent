@@ -30,18 +30,20 @@ class RazorpayClientWrapper:
         customer_phone: str,
         expiry_timestamp: int,
         reference_id: str,
-        force_timeout: bool = False
+        force_timeout: bool = False,
+        force_mock: bool = False
     ) -> Dict[str, Any]:
         """
         Creates a payment link. If force_timeout is True, raises a connection error
         to simulate an agent-side infrastructure failure for grading.
+        If force_mock is True, generates a fast local mock link without consuming network quotas.
         """
         # Hard requirement 4: Handle agent-side failure gracefully (deliberate timeout)
         if force_timeout:
             logger.warning(f"Simulating API timeout for reference_id {reference_id}...")
             raise ConnectionError("Razorpay API request timed out (simulated connection error).")
 
-        if not self.is_mock and self.client:
+        if not force_mock and not self.is_mock and self.client:
             try:
                 data = {
                     "amount": amount_paise,
