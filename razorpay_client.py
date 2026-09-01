@@ -73,7 +73,11 @@ class RazorpayClientWrapper:
                     "is_mock": False
                 }
             except Exception as e:
-                logger.error(f"Razorpay API Call failed: {e}. Raising error for agent fallback handler.")
+                err_str = str(e)
+                if "limit of 30 reached" in err_str:
+                    logger.info("Razorpay Test-Account limit of 30 links reached. Seamlessly raising for graceful fallback handler.")
+                else:
+                    logger.warning(f"Razorpay API Call failed: {e}. Raising error for agent fallback handler.")
                 raise e
         else:
             # Mock mode implementation

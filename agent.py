@@ -184,12 +184,16 @@ def generate_hinglish_message(
 def has_negative_intent(customer_reply: str) -> bool:
     """
     Checks if a customer response indicates they want to opt-out.
+    Robust against Hinglish phonetic spellings, negative phrases, and angry intent.
     """
     reply_lower = customer_reply.lower().strip()
     opt_out_words = [
         "stop", "unsubscribe", "optout", "opt out", "unsub",
-        "nahi chahiye", "band karo", "stop spam", "don't message",
-        "no thanks", "no", "cancel order", "cancel", "no buy"
+        "nahi chahiye", "nahi chaiye", "nhi chahiye", "nhi chaiye", "ni chahiye", "ni chaiye",
+        "nahi", "nhi", "nahin", "na chahiye", "mat bhejo", "mat karo", "band karo", "band kar",
+        "stop spam", "don't message", "dont message", "no thanks", "no", "cancel order",
+        "cancel", "no buy", "not interested", "block", "blocked", "fraud", "fake", "bakwaas",
+        "bsdk", "bc", "mc", "chutiya", "gandu", "idiot", "leave me alone"
     ]
     return any(word in reply_lower for word in opt_out_words)
 
