@@ -127,30 +127,48 @@ def run_interactive_mode_cli():
     
     # Initialize a mock order
     customer_name = input("Enter your name (Default: Rohan Mehra): ").strip() or "Rohan Mehra"
-    
+
     order_id = "ord_interactive"
     campaign_id = "camp_interactive"
-    
+
     # Clean old interactive campaigns if any
     if order_id in db.orders:
         del db.orders[order_id]
     if campaign_id in db.campaigns:
         del db.campaigns[campaign_id]
-        
-    # Simulate a transaction failure
-    print("\nRaw Gateway Error: Declined: Credit limit exceeded")
-    
+
+    # Let user choose failure scenario
+    import random
+    failure_scenarios = {
+        "1": ("Declined: Credit limit exceeded",          "₹2499 ka order — Credit limit exceeded"),
+        "2": ("Bank server timeout: Gateway unreachable", "₹1299 ka order — Bank server down"),
+        "3": ("Invalid CVV entered by customer",          "₹3999 ka order — CVV mismatch"),
+        "4": ("User closed payment window before auth",   "₹899 ka order  — Payment cancelled"),
+    }
+    print("\nChoose a failure scenario to simulate:")
+    for k, (_, label) in failure_scenarios.items():
+        print(f"  {k}. {label}")
+    print("  5. Random")
+    scenario_choice = input("Select (1-5, Default: 5): ").strip() or "5"
+    if scenario_choice == "5" or scenario_choice not in failure_scenarios:
+        scenario_choice = random.choice(list(failure_scenarios.keys()))
+
+    bank_error_msg, scenario_label = failure_scenarios[scenario_choice]
+    amount = float(scenario_label.split("₹")[1].split(" ")[0])
+
+    print(f"\nRaw Gateway Error: {bank_error_msg}")
+
     order = Order(
         order_id=order_id,
         customer_id="cust_interactive",
         customer_name=customer_name,
         customer_phone="+919999988888",
         customer_email="interactive@example.com",
-        amount_in_rupees=2499.00,
+        amount_in_rupees=amount,
         status="failed",
         created_at=time.time(),
         failure_reason="unknown",
-        bank_error_message="Declined: Credit limit exceeded"
+        bank_error_message=bank_error_msg
     )
     db.add_order(order)
     
