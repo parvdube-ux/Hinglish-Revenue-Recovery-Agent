@@ -75,6 +75,8 @@ You can choose from three options:
 2. **Inspect Campaign Audit Trail:** Choose any campaign to see the exact reasoning trail behind every nudge.
 3. **Run Interactive Demo Mode:** Play the customer! Attempt a failed purchase, receive a Hinglish nudge, choose to reply with opt-outs, ignore it, or complete payment.
 
+> 📄 **Sample output:** A representative run's output is committed as [`sample_audit_log.csv`](./sample_audit_log.csv), so you can review real results without running the code yourself.
+
 ### 4. Run the Unit Tests
 Execute the test suite to verify that the stopping rules and API timeout fallbacks are functioning securely:
 ```bash
